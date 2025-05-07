@@ -60,10 +60,21 @@ def login(user: User):
     raise HTTPException(status_code=401, detail="Credenciales inválidas")
 
 
-# 7º endpoint extra: buscar por nombre
 @app.get("/search")
 def search_user(name: str):
     results = [user for user in fake_users_db.values() if name.lower() in user.name.lower()]
     if not results:
         raise HTTPException(status_code=404, detail="No se encontraron usuarios con ese nombre")
     return results
+
+
+@app.post("/")
+def main():
+    endpoints = {
+        "GET /users": "Obtiene todos los usuarios.",
+        "POST /users": "Crea un nuevo usuario.",
+        "GET /users/{user_id}": "Obtiene un usuario por su ID.",
+        "PUT /users/{user_id}": "Actualiza un usuario existente.",
+        "DELETE /users/{user_id}": "Elimina un usuario por su ID."
+    }
+    return {"message": "Bienvenido a la API. Los siguientes son los endpoints disponibles:", "endpoints": endpoints}
