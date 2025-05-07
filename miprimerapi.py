@@ -1,0 +1,1 @@
+#14:27 Altiro empiezo el codigo solo que me da lata
