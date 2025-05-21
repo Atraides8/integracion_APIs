@@ -1,5 +1,9 @@
-from fastapi import FastAPI, HTTPException, Path, Query
+from fastapi import FastAPI, HTTPException, Path, Query, Depends, status
+from fastapi.security import OAuth2PasswordRequestForm
+from auth import autenticar_usuario, crear_token
+from datetime import timedelta
 from pydantic import BaseModel
+from auth import requerir_rol
 import requests
 
 app = FastAPI()
@@ -25,6 +29,18 @@ class Pedido(BaseModel):
     idVendedor: int
 
 # ------------------- ENDPOINTS ---------------------
+
+@app.post("/login")
+def login(form_data: OAuth2PasswordRequestForm = Depends()):
+    usuario = autenticar_usuario(form_data.username, form_data.password)
+    if not usuario:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Credenciales inválidas",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    access_token = crear_token(data={"sub": usuario["username"], "rol": usuario["rol"]})
+    return {"access_token": access_token, "token_type": "bearer"}
 
 @app.get("/productos")
 def obtener_productos():
@@ -76,7 +92,7 @@ def obtener_sucursal(id: str = Path(..., description="ID de la sucursal, ej: SC0
 
 
 @app.get("/vendedores")
-def obtener_vendedores():
+def obtener_vendedores(user=Depends(requerir_rol("admin", "maintainer"))):
     try:
         response = requests.get(f"{FERREMAS_API_URL}/data/vendedores", headers=HEADERS, timeout=TIMEOUT)
         response.raise_for_status()
@@ -86,7 +102,8 @@ def obtener_vendedores():
     
 
 @app.get("/vendedores/{id}")
-def obtener_vendedor(id: str = Path(..., description="ID del vendedor, ej: V001")):
+def obtener_vendedor(id: str = Path(..., description="ID del vendedor, ej: V001"),
+                     user=Depends(requerir_rol("admin", "maintainer"))):
     try:
         response = requests.get(
             f"{FERREMAS_API_URL}/data/vendedores/{id}",
@@ -125,7 +142,8 @@ def crear_pedido(pedido: Pedido):
 @app.put("/productos/venta/{id}")
 def registrar_venta(
     id: str = Path(..., description="ID del artículo, ej: ART001"),
-    cantidad: int = Query(..., gt=0, description="Cantidad a registrar en la venta")
+    cantidad: int = Query(..., gt=0, description="Cantidad a registrar en la venta"),
+    user: dict = Depends(requerir_rol("admin", "maintainer"))
 ):
     try:
         response = requests.put(
