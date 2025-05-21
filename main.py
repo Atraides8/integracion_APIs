@@ -1,13 +1,17 @@
 from fastapi import FastAPI, HTTPException, Path, Query, Depends, status
-from fastapi.security import OAuth2PasswordRequestForm
+from fastapi.security import OAuth2PasswordRequestForm, OAuth2PasswordBearer
 from auth import autenticar_usuario, crear_token
 from datetime import timedelta
 from pydantic import BaseModel
 from auth import requerir_rol
+from fastapi.openapi.models import OAuthFlows as OAuthFlowsModel
+from fastapi.openapi.models import SecuritySchemeType
+from fastapi.openapi.utils import get_openapi
 import requests
 
 app = FastAPI()
 
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
 # Configuración base de la API de FERREMAS
 FERREMAS_API_URL = "https://ea2p2assets-production.up.railway.app"
 AUTH_TOKEN = "SaGrP9ojGS39hU9ljqbXxQ=="
@@ -29,6 +33,31 @@ class Pedido(BaseModel):
     idVendedor: int
 
 # ------------------- ENDPOINTS ---------------------
+
+# Modificar el esquema OpenAPI para que Swagger muestre autenticación
+def custom_openapi():
+    if app.openapi_schema:
+        return app.openapi_schema
+    openapi_schema = get_openapi(
+        title="API de Ferremas",
+        version="1.0.0",
+        description="API protegida con JWT y roles (admin, maintainer, etc.)",
+        routes=app.routes,
+    )
+    openapi_schema["components"]["securitySchemes"] = {
+        "OAuth2PasswordBearer": {
+            "type": "http",
+            "scheme": "bearer",
+            "bearerFormat": "JWT"
+        }
+    }
+    for path in openapi_schema["paths"].values():
+        for method in path.values():
+            method.setdefault("security", [{"OAuth2PasswordBearer": []}])
+    app.openapi_schema = openapi_schema
+    return app.openapi_schema
+
+app.openapi = custom_openapi
 
 @app.post("/login")
 def login(form_data: OAuth2PasswordRequestForm = Depends()):
