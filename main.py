@@ -1,23 +1,19 @@
 from fastapi import FastAPI, HTTPException, Path, Query, Depends, status
-from fastapi.security import OAuth2PasswordRequestForm, OAuth2PasswordBearer
-from auth import autenticar_usuario, crear_token
+from fastapi.security import OAuth2PasswordRequestForm
+from auth import autenticar_usuario, crear_token, requerir_rol
 from datetime import timedelta
 from pydantic import BaseModel
-from auth import requerir_rol
-from fastapi.openapi.models import OAuthFlows as OAuthFlowsModel
-from fastapi.openapi.models import SecuritySchemeType
 from fastapi.openapi.utils import get_openapi
 import requests
 
 app = FastAPI()
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
 # Configuración base de la API de FERREMAS
 FERREMAS_API_URL = "https://ea2p2assets-production.up.railway.app"
 AUTH_TOKEN = "SaGrP9ojGS39hU9ljqbXxQ=="
 
 HEADERS = {
-    "x-authentication": AUTH_TOKEN,  # ✅ Header correcto
+    "x-authentication": AUTH_TOKEN,
     "Accept": "application/json",
     "Content-Type": "application/json"
 }
@@ -34,7 +30,7 @@ class Pedido(BaseModel):
 
 # ------------------- ENDPOINTS ---------------------
 
-# Modificar el esquema OpenAPI para que Swagger muestre autenticación
+# Modificar el esquema OpenAPI para mostrar JWT auth en Swagger
 def custom_openapi():
     if app.openapi_schema:
         return app.openapi_schema
@@ -45,7 +41,7 @@ def custom_openapi():
         routes=app.routes,
     )
     openapi_schema["components"]["securitySchemes"] = {
-        "OAuth2PasswordBearer": {
+        "OAuth2PasswordBearer": {  # Solo es un nombre, no depende de la clase usada
             "type": "http",
             "scheme": "bearer",
             "bearerFormat": "JWT"
@@ -59,6 +55,8 @@ def custom_openapi():
 
 app.openapi = custom_openapi
 
+# ------------------- LOGIN ---------------------
+
 @app.post("/login")
 def login(form_data: OAuth2PasswordRequestForm = Depends()):
     usuario = autenticar_usuario(form_data.username, form_data.password)
@@ -71,6 +69,8 @@ def login(form_data: OAuth2PasswordRequestForm = Depends()):
     access_token = crear_token(data={"sub": usuario["username"], "rol": usuario["rol"]})
     return {"access_token": access_token, "token_type": "bearer"}
 
+# ------------------- ENDPOINTS ABIERTOS ---------------------
+
 @app.get("/productos")
 def obtener_productos():
     try:
@@ -81,7 +81,6 @@ def obtener_productos():
         raise HTTPException(status_code=response.status_code, detail=response.text)
     except requests.RequestException as e:
         raise HTTPException(status_code=503, detail=str(e))
-
 
 @app.get("/productos/{id}")
 def obtener_producto(id: str = Path(..., description="ID del artículo, ej: ART001")):
@@ -94,7 +93,6 @@ def obtener_producto(id: str = Path(..., description="ID del artículo, ej: ART0
     except requests.RequestException as e:
         raise HTTPException(status_code=503, detail=str(e))
 
-
 @app.get("/sucursales")
 def obtener_sucursales():
     try:
@@ -103,22 +101,19 @@ def obtener_sucursales():
         return response.json()
     except requests.RequestException as e:
         raise HTTPException(status_code=503, detail=str(e))
-    
+
 @app.get("/sucursales/{id}")
 def obtener_sucursal(id: str = Path(..., description="ID de la sucursal, ej: SC001")):
     try:
-        response = requests.get(
-            f"{FERREMAS_API_URL}/data/sucursales/{id}",
-            headers=HEADERS,
-            timeout=TIMEOUT
-        )
+        response = requests.get(f"{FERREMAS_API_URL}/data/sucursales/{id}", headers=HEADERS, timeout=TIMEOUT)
         response.raise_for_status()
         return response.json()
     except requests.HTTPError:
         raise HTTPException(status_code=response.status_code, detail="Sucursal no encontrada")
     except requests.RequestException as e:
-        raise HTTPException(status_code=503, detail=str(e))    
+        raise HTTPException(status_code=503, detail=str(e))
 
+# ------------------- ENDPOINTS PROTEGIDOS ---------------------
 
 @app.get("/vendedores")
 def obtener_vendedores(user=Depends(requerir_rol("admin", "maintainer"))):
@@ -128,45 +123,18 @@ def obtener_vendedores(user=Depends(requerir_rol("admin", "maintainer"))):
         return response.json()
     except requests.RequestException as e:
         raise HTTPException(status_code=503, detail=str(e))
-    
 
 @app.get("/vendedores/{id}")
 def obtener_vendedor(id: str = Path(..., description="ID del vendedor, ej: V001"),
                      user=Depends(requerir_rol("admin", "maintainer"))):
     try:
-        response = requests.get(
-            f"{FERREMAS_API_URL}/data/vendedores/{id}",
-            headers=HEADERS,
-            timeout=TIMEOUT
-        )
+        response = requests.get(f"{FERREMAS_API_URL}/data/vendedores/{id}", headers=HEADERS, timeout=TIMEOUT)
         response.raise_for_status()
         return response.json()
     except requests.HTTPError:
         raise HTTPException(status_code=response.status_code, detail="Vendedor no encontrado")
     except requests.RequestException as e:
         raise HTTPException(status_code=503, detail=str(e))
-
-
-#EN ARREGLO MIENTRAS LO VE EL PROFE
-"""@app.post("/pedidos")
-def crear_pedido(pedido: Pedido):
-    try:
-        response = requests.post(
-            f"{FERREMAS_API_URL}/data/pedidos/nuevo",
-            json=pedido.dict(),  # Convertimos el modelo en dict para pasarlo como JSON
-            headers=HEADERS,
-            timeout=TIMEOUT
-        )
-        response.raise_for_status()
-        return {
-            "mensaje": "Pedido creado correctamente",
-            "datos": response.json()
-        }
-    except requests.HTTPError:
-        raise HTTPException(status_code=response.status_code, detail="Error al crear pedido")
-    except requests.RequestException as e:
-        raise HTTPException(status_code=503, detail=str(e))"""
-
 
 @app.put("/productos/venta/{id}")
 def registrar_venta(
@@ -177,7 +145,7 @@ def registrar_venta(
     try:
         response = requests.put(
             f"{FERREMAS_API_URL}/data/articulos/venta/{id}",
-            params={"cantidad": cantidad},  # 👈 enviar como query param
+            params={"cantidad": cantidad},
             headers=HEADERS,
             timeout=TIMEOUT
         )
