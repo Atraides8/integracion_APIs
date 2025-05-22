@@ -4,10 +4,10 @@ from jose import JWTError, jwt
 from datetime import datetime, timedelta
 from typing import Optional
 
-# Seguridad con HTTP Bearer (para Swagger)
+# Seguridad HTTP Bearer
 security = HTTPBearer()
 
-# Usuarios de prueba (sin hash para simplicidad)
+# Usuarios de prueba (sin hash, para simplificar)
 USUARIOS_PRUEBA = {
     "javier_thompson": {
         "password": "aONF4d6aNBIxRjlgjBRRzrS",
@@ -23,19 +23,19 @@ USUARIOS_PRUEBA = {
     },
 }
 
-# Configuración JWT
+# Configuración de JWT
 SECRET_KEY = "clave_super_secreta_para_token"
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
 
-# Autenticar usuario con sus credenciales
+# Autenticar usuario
 def autenticar_usuario(username: str, password: str) -> Optional[dict]:
     user = USUARIOS_PRUEBA.get(username)
     if user and user["password"] == password:
         return {"username": username, "rol": user["rol"]}
     return None
 
-# Crear el JWT
+# Crear JWT
 def crear_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
     to_encode = data.copy()
     expire = datetime.utcnow() + (expires_delta or timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
@@ -55,9 +55,9 @@ def obtener_usuario_actual(
             raise HTTPException(status_code=401, detail="Token inválido")
         return {"username": username, "rol": rol}
     except JWTError:
-        raise HTTPException(status_code=401, detail="Token inválido o expirado")
+        raise HTTPException(status_code=401, detail="Token inválido")
 
-# Validación de roles
+# Verificar rol
 def requerir_rol(*roles):
     def rol_checker(user: dict = Depends(obtener_usuario_actual)):
         if user["rol"] not in roles:
