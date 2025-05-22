@@ -4,9 +4,13 @@ from auth import autenticar_usuario, crear_token, requerir_rol
 from datetime import timedelta
 from pydantic import BaseModel
 from fastapi.openapi.utils import get_openapi
+from banco_central import router as banco_central_router
 import requests
 
 app = FastAPI()
+
+# Incluir routers
+app.include_router(banco_central_router, prefix="/api", tags=["Banco Central"])
 
 # Configuración base de la API de FERREMAS
 FERREMAS_API_URL = "https://ea2p2assets-production.up.railway.app"
