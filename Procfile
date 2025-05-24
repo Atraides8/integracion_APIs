@@ -1,1 +1,1 @@
-web: uvicorn miprimerapi:app --host=0.0.0.0 --port=${PORT}
+web: uvicorn integracion_apis:app --host=0.0.0.0 --port=${PORT}
