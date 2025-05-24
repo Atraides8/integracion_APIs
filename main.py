@@ -1,40 +1,47 @@
-from fastapi import FastAPI, HTTPException, Path, Query, Depends, status
+import os
+from fastapi import FastAPI, HTTPException, Depends, Path, Query, status
 from fastapi.security import OAuth2PasswordRequestForm
-from auth import autenticar_usuario, crear_token, requerir_rol
-from datetime import timedelta
 from pydantic import BaseModel
 from fastapi.openapi.utils import get_openapi
-from banco_central import router as banco_central_router
+import stripe
 import requests
+
+
+# Importar funciones y router
+from auth import autenticar_usuario, crear_token, requerir_rol
+from banco_central import router as banco_central_router
+
+# Configurar Stripe con clave de prueba desde variable de entorno
+stripe.api_key = os.getenv("STRIPE_API_KEY")
 
 app = FastAPI()
 
-# Incluir routers
+# Incluir router banco central
 app.include_router(banco_central_router, prefix="/api", tags=["Banco Central"])
 
-# Configuración base de la API de FERREMAS
+# Config FERREMAS
 FERREMAS_API_URL = "https://ea2p2assets-production.up.railway.app"
 AUTH_TOKEN = "SaGrP9ojGS39hU9ljqbXxQ=="
-
 HEADERS = {
     "x-authentication": AUTH_TOKEN,
     "Accept": "application/json",
     "Content-Type": "application/json"
 }
+TIMEOUT = 10
 
-TIMEOUT = 10  # segundos
-
-# ------------------- MODELOS ---------------------
-
+# Modelos
 class Pedido(BaseModel):
     idArticulo: str
     cantidad: int
     idSucursal: str
     idVendedor: int
 
-# ------------------- ENDPOINTS ---------------------
+class PagoRequest(BaseModel):
+    amount: int  # en centavos, ej: 1000 = $10.00
+    currency: str = "usd"
+    description: str = "Pago de prueba"
 
-# Modificar el esquema OpenAPI para mostrar JWT auth en Swagger
+# Personalizar Swagger para JWT
 def custom_openapi():
     if app.openapi_schema:
         return app.openapi_schema
@@ -45,7 +52,7 @@ def custom_openapi():
         routes=app.routes,
     )
     openapi_schema["components"]["securitySchemes"] = {
-        "OAuth2PasswordBearer": {  # Solo es un nombre, no depende de la clase usada
+        "OAuth2PasswordBearer": {
             "type": "http",
             "scheme": "bearer",
             "bearerFormat": "JWT"
@@ -59,8 +66,7 @@ def custom_openapi():
 
 app.openapi = custom_openapi
 
-# ------------------- LOGIN ---------------------
-
+# LOGIN
 @app.post("/login")
 def login(form_data: OAuth2PasswordRequestForm = Depends()):
     usuario = autenticar_usuario(form_data.username, form_data.password)
@@ -73,8 +79,7 @@ def login(form_data: OAuth2PasswordRequestForm = Depends()):
     access_token = crear_token(data={"sub": usuario["username"], "rol": usuario["rol"]})
     return {"access_token": access_token, "token_type": "bearer"}
 
-# ------------------- ENDPOINTS ABIERTOS ---------------------
-
+# ENDPOINTS ABIERTOS
 @app.get("/productos")
 def obtener_productos():
     try:
@@ -117,8 +122,7 @@ def obtener_sucursal(id: str = Path(..., description="ID de la sucursal, ej: SC0
     except requests.RequestException as e:
         raise HTTPException(status_code=503, detail=str(e))
 
-# ------------------- ENDPOINTS PROTEGIDOS ---------------------
-
+# ENDPOINTS PROTEGIDOS
 @app.get("/vendedores")
 def obtener_vendedores(user=Depends(requerir_rol("admin", "maintainer"))):
     try:
@@ -159,3 +163,20 @@ def registrar_venta(
         raise HTTPException(status_code=response.status_code, detail="Error al registrar venta")
     except requests.RequestException as e:
         raise HTTPException(status_code=503, detail=str(e))
+
+# ENDPOINT PARA STRIPE
+@app.post("/pago")
+def crear_pago(pago: PagoRequest):
+    try:
+        intent = stripe.PaymentIntent.create(
+            amount=pago.amount,
+            currency=pago.currency,
+            description=pago.description,
+            payment_method_types=["card"],
+        )
+        return {
+            "client_secret": intent.client_secret,
+            "message": "PaymentIntent creado con éxito, usá el client_secret para completar el pago."
+        }
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
